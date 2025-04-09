@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon 3D Audio Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Arial', sans-serif;
+        }
+        #container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+        #ui {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            color: white;
+        }
+        .control-btn {
+            background: rgba(0, 150, 255, 0.3);
+            border: 1px solid rgba(0, 200, 255, 0.8);
+            color: white;
+            padding: 10px 20px;
+            margin: 0 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .control-btn:hover {
+            background: rgba(0, 200, 255, 0.6);
+            transform: scale(1.05);
+        }
+        .control-btn:active {
+            transform: scale(0.95);
+        }
+        #title {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-size: 2.5rem;
+            text-shadow: 0 0 10px rgba(0, 200, 255, 0.8);
+            letter-spacing: 3px;
+        }
+        #permission-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 30px;
+            border-radius: 15px;
+            color: white;
+            text-align: center;
+            max-width: 80%;
+            border: 1px solid rgba(0, 200, 255, 0.5);
+            box-shadow: 0 0 20px rgba(0, 200, 255, 0.3);
+        }
+        #permission-btn {
+            background: linear-gradient(45deg, #00b4db, #0083b0);
+            border: none;
+            color: white;
+            padding: 12px 25px;
+            margin-top: 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+        #permission-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(0, 180, 219, 0.6);
+        }
+        .hidden {
+            display: none !important;
+        }
+        #visualizer-select {
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(0, 200, 255, 0.5);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 15px;
+            margin: 0 10px;
+        }
+        #settings-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 200, 255, 0.5);
+            color: white;
+        }
+        .setting-item {
+            margin: 10px 0;
+        }
+        .setting-label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+        .setting-slider {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    
+    <h1 id="title">NEON AUDIO DIMENSION</h1>
+    
+    <div id="ui">
+        <button id="start-btn" class="control-btn">Start Visualizer</button>
+        <select id="visualizer-select" class="control-btn">
+            <option value="bars">3D Bars</option>
+            <option value="sphere">Audio Sphere</option>
+            <option value="wave">Waveform</option>
+        </select>
+        <button id="settings-btn" class="control-btn">Settings</button>
+    </div>
+    
+    <div id="settings-panel" class="hidden">
+        <div class="setting-item">
+            <label class="setting-label">Bar Count</label>
+            <input type="range" id="bar-count" class="setting-slider" min="16" max="128" value="64">
+        </div>
+        <div class="setting-item">
+            <label class="setting-label">Sensitivity</label>
+            <input type="range" id="sensitivity" class="setting-slider" min="50" max="300" value="150">
+        </div>
+        <div class="setting-item">
+            <label class="setting-label">Rotation Speed</label>
+            <input type="range" id="rotation-speed" class="setting-slider" min="0" max="200" value="50">
+        </div>
+        <div class="setting-item">
+            <label class="setting-label">Neon Intensity</label>
+            <input type="range" id="neon-intensity" class="setting-slider" min="1" max="5" value="2" step="0.1">
+        </div>
+    </div>
+    
+    <div id="permission-message">
+        <h2>Welcome to Neon Audio Dimension</h2>
+        <p>This interactive 3D audio visualizer responds to sound from your microphone.</p>
+        <p>Click the button below to allow microphone access and begin the experience.</p>
+        <button id="permission-btn">Allow Microphone Access</button>
+    </div>
+
+    <script>
+        // Main variables
+        let scene, camera, renderer, analyser, audioContext, microphone, dataArray;
+        let bars = [];
+        let visualizerType = 'bars';
+        let isAnimating = false;
+        let rotationSpeed = 0.005;
+        let barCount = 64;
+        let sensitivity = 150;
+        let neonIntensity = 2;
+        
+        // DOM elements
+        const container = document.getElementById('container');
+        const permissionMessage = document.getElementById('permission-message');
+        const permissionBtn = document.getElementById('permission-btn');
+        const startBtn = document.getElementById('start-btn');
+        const visualizerSelect = document.getElementById('visualizer-select');
+        const settingsBtn = document.getElementById('settings-btn');
+        const settingsPanel = document.getElementById('settings-panel');
+        const barCountSlider = document.getElementById('bar-count');
+        const sensitivitySlider = document.getElementById('sensitivity');
+        const rotationSpeedSlider = document.getElementById('rotation-speed');
+        const neonIntensitySlider = document.getElementById('neon-intensity');
+        
+        // Initialize Three.js scene
+        function initScene() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+            
+            // Add some ambient light
+            const ambientLight = new THREE.AmbientLight(0x222222);
+            scene.add(ambientLight);
+            
+            // Add directional light
+            const directionalLight = new THREE.DirectionalLight(0x00aaff, 0.5);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1.1, 1000);
+            camera.position.z = 10;
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+            
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+        
+        // Create audio analyzer
+        async function initAudio() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                microphone = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                
+                microphone.connect(analyser);
+                
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                permissionMessage.classList.add('hidden');
+                startBtn.classList.remove('hidden');
+                
+                // Create initial visualizer
+                createVisualizer();
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                permissionMessage.querySelector('p').textContent = 
+                    'Microphone access was denied. Please refresh and allow microphone access to use the visualizer.';
+                permissionBtn.classList.add('hidden');
+            }
+        }
+        
+        // Create visualizer based on selected type
+        function createVisualizer() {
+            // Clear existing objects
+            bars.forEach(bar => {
+                scene.remove(bar.mesh);
+            });
+            bars = [];
+            
+            if (visualizerType === 'bars') {
+                createBarsVisualizer();
+            } else if (visualizerType === 'sphere') {
+                createSphereVisualizer();
+            } else if (visualizerType === 'wave') {
+                createWaveVisualizer();
+            }
+        }
+        
+        // Create 3D bars visualizer
+        function createBarsVisualizer() {
+            const radius = 3;
+            const angleStep = (Math.PI * 2) / barCount;
+            
+            for (let i = 0; i < barCount; i++) {
+                const angle = i * angleStep;
+                const x = Math.cos(angle) * radius;
+                const z = Math.sin(angle) * radius;
+                
+                const height = 0.1;
+                const width = 0.1;
+                const depth = 0.1;
+                
+                const geometry = new THREE.BoxGeometry(width, height, depth);
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0x00ffff,
+                    emissive: 0x00aaff,
+                    emissiveIntensity: neonIntensity,
+                    shininess: 100,
+                    specular: 0xffffff
+                });
+                
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(x, 0, z);
+                mesh.lookAt(new THREE.Vector3(0, 0, 0));
+                
+                scene.add(mesh);
+                
+                bars.push({
+                    mesh,
+                    baseX: x,
+                    baseZ: z,
+                    baseY: 0,
+                    angle
+                });
+            }
+        }
+        
+        // Create sphere visualizer
+        function createSphereVisualizer() {
+            const segments = Math.floor(Math.sqrt(barCount));
+            const geometry = new THREE.SphereGeometry(2, segments, segments);
+            
+            // Create a custom shader material for pulsing effect
+            const material = new THREE.MeshPhongMaterial({
+                color: 0x00aaff,
+                emissive: 0x0066ff,
+                emissiveIntensity: neonIntensity,
+                transparent: true,
+                opacity: 0.8,
+                wireframe: true,
+                shininess: 100
+            });
+            
+            const sphere = new THREE.Mesh(geometry, material);
+            scene.add(sphere);
+            
+            bars.push({
+                mesh: sphere,
+                baseScale: 1
+            });
+        }
+        
+        // Create waveform visualizer
+        function createWaveVisualizer() {
+            const points = barCount;
+            const radius = 3;
+            const angleStep = (Math.PI * 2) / points;
+            
+            for (let i = 0; i < points; i++) {
+                const angle = i * angleStep;
+                const x = Math.cos(angle) * radius;
+                const z = Math.sin(angle) * radius;
+                
+                const geometry = new THREE.SphereGeometry(0.05, 8, 8);
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0x00ffff,
+                    emissive: 0x00aaff,
+                    emissiveIntensity: neonIntensity,
+                    shininess: 100
+                });
+                
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(x, 0, z);
+                
+                scene.add(mesh);
+                
+                bars.push({
+                    mesh,
+                    baseX: x,
+                    baseZ: z,
+                    baseY: 0,
+                    angle
+                });
+            }
+        }
+        
+        // Animation loop
+        function animate() {
+            if (!isAnimating) return;
+            
+            requestAnimationFrame(animate);
+            
+            // Get frequency data
+            analyser.getByteFrequencyData(dataArray);
+            
+            // Update visualizer based on type
+            if (visualizerType === 'bars') {
+                updateBarsVisualizer();
+            } else if (visualizerType === 'sphere') {
+                updateSphereVisualizer();
+            } else if (visualizerType === 'wave') {
+                updateWaveVisualizer();
+            }
+            
+            // Rotate the scene
+            scene.rotation.y += rotationSpeed;
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Update bars visualizer
+        function updateBarsVisualizer() {
+            const segmentSize = Math.floor(dataArray.length / barCount);
+            
+            bars.forEach((bar, i) => {
+                const start = i * segmentSize;
+                let sum = 0;
+                
+                for (let j = 0; j < segmentSize; j++) {
+                    sum += dataArray[start + j] || 0;
+                }
+                
+                const average = sum / segmentSize;
+                const scale = average / sensitivity;
+                
+                bar.mesh.scale.y = 1 + scale * 5;
+                bar.mesh.position.y = scale * 2;
+                
+                // Update color based on height
+                const hue = 180 + scale * 30;
+                const color = new THREE.Color(`hsl(${hue}, 100%, 50%)`);
+                bar.mesh.material.color.copy(color);
+                bar.mesh.material.emissive.copy(color);
+                bar.mesh.material.needsUpdate = true;
+            });
+        }
+        
+        // Update sphere visualizer
+        function updateSphereVisualizer() {
+            const sum = dataArray.reduce((acc, val) => acc + val, 0);
+            const average = sum / dataArray.length;
+            const scale = 1 + (average / sensitivity) * 0.5;
+            
+            bars[0].mesh.scale.set(scale, scale, scale);
+            
+            // Pulsing color effect
+            const hue = 200 + (average / 255) * 60;
+            const color = new THREE.Color(`hsl(${hue}, 100%, 50%)`);
+            bars[0].mesh.material.color.copy(color);
+            bars[0].mesh.material.emissive.copy(color);
+            bars[0].mesh.material.needsUpdate = true;
+        }
+        
+        // Update wave visualizer
+        function updateWaveVisualizer() {
+            const segmentSize = Math.floor(dataArray.length / barCount);
+            
+            bars.forEach((bar, i) => {
+                const start = i * segmentSize;
+                let sum = 0;
+                
+                for (let j = 0; j < segmentSize; j++) {
+                    sum += dataArray[start + j] || 0;
+                }
+                
+                const average = sum / segmentSize;
+                const scale = average / sensitivity;
+                
+                // Position the points in a wave pattern
+                const waveHeight = Math.sin(Date.now() * 0.002 + i * 0.2) * 0.5;
+                bar.mesh.position.y = scale * 2 + waveHeight;
+                
+                // Update color based on height
+                const hue = 180 + scale * 30;
+                const color = new THREE.Color(`hsl(${hue}, 100%, 50%)`);
+                bar.mesh.material.color.copy(color);
+                bar.mesh.material.emissive.copy(color);
+                bar.mesh.material.needsUpdate = true;
+            });
+        }
+        
+        // Event listeners
+        permissionBtn.addEventListener('click', () => {
+            initScene();
+            initAudio();
+        });
+        
+        startBtn.addEventListener('click', () => {
+            isAnimating = true;
+            animate();
+            startBtn.textContent = 'Visualizer Running';
+            startBtn.style.background = 'rgba(0, 255, 100, 0.3)';
+            startBtn.style.border = '1px solid rgba(0, 255, 150, 0.8)';
+        });
+        
+        visualizerSelect.addEventListener('change', () => {
+            visualizerType = visualizerSelect.value;
+            createVisualizer();
+        });
+        
+        settingsBtn.addEventListener('click', () => {
+            settingsPanel.classList.toggle('hidden');
+        });
+        
+        // Update settings from sliders
+        barCountSlider.addEventListener('input', () => {
+            barCount = parseInt(barCountSlider.value);
+            createVisualizer();
+        });
+        
+        sensitivitySlider.addEventListener('input', () => {
+            sensitivity = parseInt(sensitivitySlider.value);
+        });
+        
+        rotationSpeedSlider.addEventListener('input', () => {
+            rotationSpeed = parseInt(rotationSpeedSlider.value) / 10000;
+        });
+        
+        neonIntensitySlider.addEventListener('input', () => {
+            neonIntensity = parseFloat(neonIntensitySlider.value);
+            createVisualizer();
+        });
+    </script>
+</body>
+</html>
